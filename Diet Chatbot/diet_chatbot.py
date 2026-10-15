@@ -1,14 +1,3 @@
-"""
-Diet Plan Generator - Gradio web chatbot (Python 3.8+).
-
-Install:  pip install gradio
-Run:      python diet_chatbot_gradio.py      (then open the link shown in the terminal)
-
-The logic (BMI, BMR, TDEE, meal database, 7-day plan, results, grocery list) is the
-same as the command-line version. Only the "look" changed: the chat now runs in the
-browser, with quick-reply buttons and a live dashboard on the right.
-"""
-
 import os
 import html
 import random
@@ -18,9 +7,6 @@ import textwrap
 
 import gradio as gr
 
-# ------------------------------------------------------------------
-# CONSTANTS (all the fixed numbers and choices live here)
-# ------------------------------------------------------------------
 MEAL_SLOTS = ["breakfast", "lunch", "snack", "dinner"]
 SLOT_SPLIT = {"breakfast": 0.25, "lunch": 0.35, "snack": 0.10, "dinner": 0.30}
 SLOT_ICON = {"breakfast": "🍳", "lunch": "🍛", "snack": "🍎", "dinner": "🌙"}
@@ -30,17 +16,14 @@ GOAL_FACTOR = {"weight loss": 0.80, "maintenance": 1.0, "muscle gain": 1.10}
 PROTEIN_PER_KG = {"weight loss": 1.2, "maintenance": 1.0, "muscle gain": 1.6}
 MIN_CALORIES = {"male": 1500, "female": 1200}
 
-# A higher rank can eat everything a lower rank can (vegan < veg < eggetarian < nonveg)
 DIET_RANK = {"vegan": 0, "veg": 1, "eggetarian": 2, "nonveg": 3}
 
-# Words the user might type for an allergy -> the allergen tag used in our meal database
 ALLERGY_ALIASES = {
     "milk": "dairy", "lactose": "dairy", "wheat": "gluten", "peanut": "nuts",
     "peanuts": "nuts", "almond": "nuts", "cashew": "nuts", "nut": "nuts",
     "eggs": "egg", "prawn": "shellfish", "prawns": "shellfish",
 }
 
-# If the user mentions any of these, we do NOT make a plan
 RISKY_WORDS = ["pregnan", "kidney", "cancer", "eating disorder", "anorexia", "bulimia", "binge"]
 
 PROTEIN_TIPS = {
@@ -52,7 +35,6 @@ PROTEIN_TIPS = {
 
 PLAN_FILE = "diet_plan.txt"
 
-# The questions, in the order they are asked
 STEPS = ["name", "age", "gender", "height", "weight",
          "activity", "goal", "diet", "allergies", "conditions"]
 
@@ -63,7 +45,6 @@ CHOICES = {
     "diet": ["veg", "nonveg", "vegan", "eggetarian"],
 }
 
-# key -> (lowest, highest, unit, whole number only?)
 NUMBER_RULES = {
     "age": (15, 80, "years", True),
     "height": (100, 250, "cm", False),
@@ -87,16 +68,10 @@ QUESTIONS = {
     "conditions": "Do you have any **medical conditions**? (e.g. *diabetes, thyroid*) - or type **none**",
 }
 
-# ------------------------------------------------------------------
-# MEAL DATABASE  (calories and protein are for ONE normal serving)
-# ------------------------------------------------------------------
-
-
 def make_meal(name, calories, protein, diet, allergens, ingredients):
-    """Pack the details of one meal into a dictionary."""
+
     return {"name": name, "calories": calories, "protein": protein, "diet": diet,
             "allergens": allergens, "ingredients": ingredients}
-
 
 MEALS = {
     "breakfast": [
@@ -189,24 +164,18 @@ MEALS = {
     ],
 }
 
-
-# ------------------------------------------------------------------
-# INPUT CHECKING (each function returns  value, error_message)
-# ------------------------------------------------------------------
 def clean(text):
-    """Lower-case a text and remove spaces and hyphens so 'Non-Veg' matches 'nonveg'."""
+
     return text.lower().replace(" ", "").replace("-", "")
 
-
 def parse_name(text):
-    """Accept a name made of letters (spaces allowed), at least 2 characters."""
+
     if len(text) >= 2 and text.replace(" ", "").isalpha():
         return text.title(), None
     return None, "😅 Please use **letters only** (at least 2), for example: *Priya*"
 
-
 def parse_number(text, low, high, unit, whole):
-    """Accept a number between low and high (whole numbers only if whole=True)."""
+
     try:
         value = float(text)
     except ValueError:
@@ -217,9 +186,8 @@ def parse_number(text, low, high, unit, whole):
         return None, f"😅 Please enter a sensible value between **{low} and {high} {unit}**."
     return (int(value) if whole else value), None
 
-
 def parse_choice(text, options):
-    """Accept the number or the name of one of the options."""
+
     numbers = [str(n) for n in range(1, len(options) + 1)]
     if text in numbers:
         return options[int(text) - 1], None
@@ -228,9 +196,8 @@ def parse_choice(text, options):
             return option, None
     return None, "😅 Sorry, that is not a valid choice. Type the **number** or the **name**."
 
-
 def parse_list(text):
-    """Accept a comma-separated list of words; 'none' gives an empty list."""
+
     text = text.lower()
     if text in ("none", "no", "nil", "na", "n/a"):
         return [], None
@@ -239,9 +206,8 @@ def parse_list(text):
         return items, None
     return None, "😅 Please use **letters only**, separated by commas (or type **none**)."
 
-
 def parse_answer(key, text):
-    """Check the answer for the current question; returns (value, error_message)."""
+
     if key == "name":
         return parse_name(text)
     if key in NUMBER_RULES:
@@ -249,28 +215,22 @@ def parse_answer(key, text):
         return parse_number(text, low, high, unit, whole)
     if key in CHOICES:
         return parse_choice(text, CHOICES[key])
-    return parse_list(text)          # allergies and conditions
-
+    return parse_list(text)          
 
 def ask_text(key):
-    """Return the question text (with numbered options for choice questions)."""
+
     text = QUESTIONS[key]
     if key in CHOICES:
         menu = "   ".join(f"**{n}.** {name}" for n, name in enumerate(CHOICES[key], start=1))
         text += "\n\n" + menu + "\n\n*Type the number or the name - or tap a button below.*"
     return text
 
-
-# ------------------------------------------------------------------
-# CALCULATIONS
-# ------------------------------------------------------------------
 def calculate_bmi(weight, height_cm):
-    """Return BMI = weight (kg) / height (m) squared."""
+
     return weight / (height_cm / 100) ** 2
 
-
 def bmi_category(bmi):
-    """Return the BMI category name."""
+
     if bmi < 18.5:
         return "underweight"
     if bmi < 25:
@@ -279,17 +239,15 @@ def bmi_category(bmi):
         return "overweight"
     return "obese"
 
-
 def calculate_bmr(profile):
-    """Return BMR (kcal/day) using the Mifflin-St Jeor equation."""
+
     base = 10 * profile["weight"] + 6.25 * profile["height"] - 5 * profile["age"]
     if profile["gender"] == "male":
         return base + 5
     return base - 161
 
-
 def calculate_targets(profile):
-    """Return a dictionary with BMI, BMR, TDEE, calorie target and macro targets."""
+
     bmi = calculate_bmi(profile["weight"], profile["height"])
     bmr = calculate_bmr(profile)
     tdee = bmr * ACTIVITY_FACTOR[profile["activity"]]
@@ -298,41 +256,35 @@ def calculate_targets(profile):
     safe_minimum = MIN_CALORIES[profile["gender"]]
     floor_applied = calories < safe_minimum
     if floor_applied:
-        calories = safe_minimum              # never go below the safe minimum
+        calories = safe_minimum              
 
-    protein = PROTEIN_PER_KG[profile["goal"]] * profile["weight"]   # grams
-    fat = calories * 0.28 / 9                                       # 1 g fat = 9 kcal
-    carbs = max(0, (calories - protein * 4 - fat * 9) / 4)          # 1 g protein/carb = 4 kcal
+    protein = PROTEIN_PER_KG[profile["goal"]] * profile["weight"]   
+    fat = calories * 0.28 / 9                                       
+    carbs = max(0, (calories - protein * 4 - fat * 9) / 4)          
 
     return {"bmi": bmi, "category": bmi_category(bmi), "bmr": bmr, "tdee": tdee,
             "calories": calories, "floor_applied": floor_applied, "safe_minimum": safe_minimum,
             "protein": protein, "fat": fat, "carbs": carbs}
 
-
 def has_risky_words(text):
-    """Return True if the text mentions pregnancy, kidney disease, cancer or an eating disorder."""
+
     text = text.lower()
     for word in RISKY_WORDS:
         if word in text:
             return True
     return False
 
-
-# ------------------------------------------------------------------
-# MEAL PLAN
-# ------------------------------------------------------------------
 def has_allergen(meal, allergies):
-    """Return True if the meal contains any of the user's allergens."""
+
     text = meal["name"].lower() + " " + " ".join(meal["ingredients"])
     for item in allergies:
-        tag = ALLERGY_ALIASES.get(item, item)        # turn 'milk' into 'dairy', etc.
+        tag = ALLERGY_ALIASES.get(item, item)        
         if tag in meal["allergens"] or item in text:
             return True
     return False
 
-
 def get_eligible_meals(slot, profile):
-    """Return the meals of a slot that match the user's diet and have no allergens."""
+
     user_rank = DIET_RANK[profile["diet"]]
     eligible = []
     for meal in MEALS[slot]:
@@ -340,61 +292,56 @@ def get_eligible_meals(slot, profile):
             eligible.append(meal)
     return eligible
 
-
 def make_entry(meal, calorie_target):
-    """Scale a meal's portion (0.5x to 2x) so it is close to the calorie target."""
-    portion = round(calorie_target / meal["calories"] * 4) / 4   # round to nearest 0.25
-    portion = max(0.5, min(2.0, portion))                       # keep it between 0.5x and 2x
+
+    portion = round(calorie_target / meal["calories"] * 4) / 4   
+    portion = max(0.5, min(2.0, portion))                       
     return {"meal": meal, "portion": portion,
             "calories": round(meal["calories"] * portion),
             "protein": round(meal["protein"] * portion, 1)}
 
-
 def build_plan(profile, t):
-    """Build a 7-day plan (a list of 7 dictionaries); return None if some slot has no meals."""
+
     choices = {}
     for slot in MEAL_SLOTS:
         eligible = get_eligible_meals(slot, profile)
         if not eligible:
             return None
-        # put meals of the highest diet level first, so e.g. non-veg users see chicken too
+        
         choices[slot] = sorted(eligible, key=lambda m: DIET_RANK[m["diet"]], reverse=True)
 
     plan = []
     for day in range(7):
         day_plan = {}
         for slot in MEAL_SLOTS:
-            meal = choices[slot][day % len(choices[slot])]     # rotate through the options
+            meal = choices[slot][day % len(choices[slot])]     
             day_plan[slot] = make_entry(meal, t["calories"] * SLOT_SPLIT[slot])
         plan.append(day_plan)
     return plan
 
-
 def swap_meal(plan, slot, day_number, profile, t):
-    """Replace one meal with a different eligible one; return (old name, new name) or None."""
+
     day_plan = plan[day_number - 1]
     old_name = day_plan[slot]["meal"]["name"]
     others = [m for m in get_eligible_meals(slot, profile) if m["name"] != old_name]
     if not others:
         return None
     used_names = [d[slot]["meal"]["name"] for d in plan]
-    fresh = [m for m in others if m["name"] not in used_names]   # prefer a meal not used yet
+    fresh = [m for m in others if m["name"] not in used_names]   
     if fresh:
         others = fresh
     new_meal = random.choice(others)
     day_plan[slot] = make_entry(new_meal, t["calories"] * SLOT_SPLIT[slot])
     return old_name, new_meal["name"]
 
-
 def day_totals(day_plan):
-    """Return (total calories, total protein) of one day."""
+
     calories = sum(day_plan[slot]["calories"] for slot in MEAL_SLOTS)
     protein = sum(day_plan[slot]["protein"] for slot in MEAL_SLOTS)
     return calories, protein
 
-
 def plan_averages(plan):
-    """Return the average daily calories and protein of the whole week."""
+
     total_calories = 0
     total_protein = 0
     for day_plan in plan:
@@ -403,23 +350,21 @@ def plan_averages(plan):
         total_protein += protein
     return total_calories / len(plan), total_protein / len(plan)
 
-
 def project_weight(profile, tdee, avg_calories):
-    """Estimate weight after 2, 4, 8 and 12 weeks (7700 kcal = 1 kg)."""
+
     weight = profile["weight"]
     height = profile["height"]
-    raw_weekly = (avg_calories - tdee) * 7 / 7700          # kg change per week, before limits
-    weekly = max(-1.0, min(0.5, raw_weekly))               # loss max 1 kg/wk, gain max 0.5 kg/wk
-    lowest = min(weight, 18.5 * (height / 100) ** 2)       # never project below BMI 18.5
+    raw_weekly = (avg_calories - tdee) * 7 / 7700          
+    weekly = max(-1.0, min(0.5, raw_weekly))               
+    lowest = min(weight, 18.5 * (height / 100) ** 2)       
     results = []
     for weeks in (2, 4, 8, 12):
         new_weight = max(lowest, weight + weekly * weeks)
         results.append((weeks, new_weight, new_weight - weight, calculate_bmi(new_weight, height)))
     return results, raw_weekly, weekly, lowest
 
-
 def count_ingredients(plan):
-    """Return a dictionary: ingredient -> number of meals in the plan that use it."""
+
     counts = {}
     for day_plan in plan:
         for slot in MEAL_SLOTS:
@@ -427,21 +372,13 @@ def count_ingredients(plan):
                 counts[ingredient] = counts.get(ingredient, 0) + 1
     return counts
 
-
 def text_progress_bar(percent):
-    """Return a 20-character bar of █ and ░ followed by the percentage."""
+
     filled = int(min(percent, 100) / 100 * 20)
     return "█" * filled + "░" * (20 - filled) + f" {percent:.0f}%"
 
-
-# ------------------------------------------------------------------
-# CONTENT BLOCKS
-# Every section is built as a list of blocks:
-#   ("heading", text)  ("table", headers, rows, aligns, total_row)  ("note", text)
-# The SAME blocks are shown in the chat (markdown) and saved to the .txt file (boxed text).
-# ------------------------------------------------------------------
 def profile_blocks(profile, t):
-    """Blocks for the user's details, calculated numbers and warnings."""
+
     details = [
         ["Name", profile["name"]],
         ["Age / Gender", f"{profile['age']} / {profile['gender']}"],
@@ -476,9 +413,8 @@ def profile_blocks(profile, t):
                                "to a doctor, or consider 'maintenance' or 'muscle gain' instead."))
     return blocks
 
-
 def day_blocks(plan, day_number):
-    """Blocks for one day: a table with calories and protein per meal and the daily total."""
+
     day_plan = plan[day_number - 1]
     rows = []
     for slot in MEAL_SLOTS:
@@ -491,17 +427,15 @@ def day_blocks(plan, day_number):
             ("table", ["Meal", "Dish", "Portion", "Kcal", "Prot (g)"], rows,
              ["l", "l", "r", "r", "r"], total_row)]
 
-
 def plan_blocks(plan):
-    """Blocks for all 7 days."""
+
     blocks = []
     for day_number in range(1, 8):
         blocks += day_blocks(plan, day_number)
     return blocks
 
-
 def targets_blocks(profile, plan, t):
-    """Blocks comparing the daily targets with the plan's weekly average."""
+
     avg_calories, avg_protein = plan_averages(plan)
     calorie_percent = avg_calories / t["calories"] * 100
     protein_percent = avg_protein / t["protein"] * 100
@@ -519,9 +453,8 @@ def targets_blocks(profile, plan, t):
                                "extra " + PROTEIN_TIPS[profile["diet"]] + " to your meals or snacks."))
     return blocks
 
-
 def results_blocks(profile, plan, t):
-    """Blocks with the expected weight and BMI after 2, 4, 8 and 12 weeks."""
+
     avg_calories, _ = plan_averages(plan)
     results, raw_weekly, weekly, lowest = project_weight(profile, t["tdee"], avg_calories)
     difference = avg_calories - t["tdee"]
@@ -545,18 +478,16 @@ def results_blocks(profile, plan, t):
                            "vary from person to person and are NOT guaranteed."))
     return blocks
 
-
 def grocery_blocks(plan):
-    """Blocks with each ingredient and how many meals use it."""
+
     counts = count_ingredients(plan)
-    ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))   # most used first
+    ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))   
     rows = [[name.title(), number] for name, number in ordered]
     return [("heading", "🛒 Grocery list (7 days, 28 meals)"),
             ("table", ["Ingredient", "Meals using it"], rows, ["l", "r"], None)]
 
-
 def disclaimer_blocks(profile):
-    """Blocks with the medical disclaimer (extra warning if conditions were entered)."""
+
     blocks = [("heading", "🏥 Disclaimer"),
               ("note", "This plan is for general information only. Please consult a doctor or a "
                        "registered dietitian before starting any diet.")]
@@ -566,17 +497,15 @@ def disclaimer_blocks(profile):
                                "can change your needs."))
     return blocks
 
-
 def refusal_blocks():
-    """Blocks explaining that no plan is made for pregnancy, kidney disease, cancer, etc."""
+
     return [("heading", "🚫 Sorry, I cannot make a plan"),
             ("note", "You mentioned pregnancy, kidney disease, cancer or an eating disorder. These "
                      "need a personalised plan from a doctor or a registered dietitian, so I will "
                      "not generate a diet plan. Please see a professional. Take care! 💛")]
 
-
 def commands_blocks():
-    """Blocks listing the commands the chatbot understands."""
+
     rows = [
         ["show my plan", "see the full 7-day plan again"],
         ["show day 3", "see one day (1 to 7)"],
@@ -590,12 +519,8 @@ def commands_blocks():
     return [("heading", "💬 What you can type"),
             ("table", ["Command", "What it does"], rows, ["l", "l"], None)]
 
-
-# ------------------------------------------------------------------
-# RENDERING BLOCKS: markdown for the chat, boxed text for the file
-# ------------------------------------------------------------------
 def render_markdown(blocks):
-    """Turn blocks into markdown text for the chat window."""
+
     parts = []
     for block in blocks:
         kind = block[0]
@@ -615,22 +540,19 @@ def render_markdown(blocks):
             parts.append("\n".join(lines))
     return "\n\n".join(parts)
 
-
 def text_width(text):
-    """Return how many terminal columns a string uses (emoji count as 2)."""
+
     return sum(2 if ord(ch) >= 0x1F000 else 1 for ch in text)
 
-
 def pad_cell(text, width, align):
-    """Pad text with spaces up to the given width (align 'l' = left, 'r' = right)."""
+
     gap = width - text_width(text)
     if align == "r":
         return " " * gap + text
     return text + " " * gap
 
-
 def text_table(headers, rows, aligns, total_row):
-    """Return a boxed text table (┌ ─ ┬ │ ┘) with aligned columns."""
+
     rows = [[str(cell) for cell in row] for row in rows]
     if total_row is not None:
         total_row = [str(cell) for cell in total_row]
@@ -653,9 +575,8 @@ def text_table(headers, rows, aligns, total_row):
     lines.append(border("└", "┴", "┘"))
     return "\n".join(lines)
 
-
 def render_text(blocks):
-    """Turn blocks into plain text (no colours, no markdown) for the saved file."""
+
     parts = []
     for block in blocks:
         kind = block[0]
@@ -667,31 +588,24 @@ def render_text(blocks):
             parts.append(text_table(*block[1:]))
     return "\n".join(parts) + "\n"
 
-
-# ------------------------------------------------------------------
-# CONVERSATION STATE AND COMMANDS
-# ------------------------------------------------------------------
 def new_state():
-    """Return a fresh conversation state."""
+
     return {"step": "name", "profile": {}, "targets": None, "plan": None, "file": None}
 
-
 def greeting_text():
-    """Return the first bot message."""
+
     return ("Hello! 👋 I am **DietBot**. I will ask you a few quick questions and then build a "
             "**7-day Indian meal plan** just for you.\n\n"
             "*I am not a doctor - always check your plan with one.* You can type **quit** or "
             "**restart** at any time.\n\n" + ask_text("name"))
 
-
 def start_over(state):
-    """Reset the conversation state in place."""
+
     state.clear()
     state.update(new_state())
 
-
 def save_report(state):
-    """Write the full report to diet_plan.txt (inside a temp folder) and remember its path."""
+
     profile, t, plan = state["profile"], state["targets"], state["plan"]
     blocks = (profile_blocks(profile, t) + plan_blocks(plan) + targets_blocks(profile, plan, t)
               + results_blocks(profile, plan, t) + grocery_blocks(plan) + disclaimer_blocks(profile))
@@ -701,25 +615,22 @@ def save_report(state):
         file.write(render_text(blocks))
     state["file"] = path
 
-
 def find_day_number(words):
-    """Return the first number from 1 to 7 found in the words, or None."""
+
     for word in words:
         if word.isdecimal() and 1 <= int(word) <= 7:
             return int(word)
     return None
 
-
 def find_slot(words):
-    """Return the first meal slot name found in the words, or None."""
+
     for word in words:
         if word in MEAL_SLOTS:
             return word
     return None
 
-
 def finish_profile(state):
-    """All questions answered: check safety, calculate, build the plan; return bot messages."""
+
     profile = state["profile"]
     if has_risky_words(" ".join(profile["conditions"] + profile["allergies"])):
         state["step"] = "blocked"
@@ -741,9 +652,8 @@ def finish_profile(state):
           "or use the buttons below. 👇",
     ]
 
-
 def answer_question(state, text):
-    """Handle the answer to the current question; return the bot messages."""
+
     key = state["step"]
     value, error = parse_answer(key, text)
     if error:
@@ -757,9 +667,8 @@ def answer_question(state, text):
     greeting = f"Nice to meet you, **{value}**! 😊\n\n" if key == "name" else ""
     return [greeting + ask_text(state["step"])]
 
-
 def run_command(state, text):
-    """Run a chat command (after the plan is shown); return the bot messages."""
+
     profile, t, plan = state["profile"], state["targets"], state["plan"]
     words = text.split()
 
@@ -797,9 +706,8 @@ def run_command(state, text):
                 "Please consult a professional. 💛"]
     return ["🤔 Sorry, I did not understand that. Type **help** to see my commands."]
 
-
 def handle_message(text, history, state):
-    """Main chatbot brain: take the user's text, return the updated chat history."""
+
     text = text.strip()
     if not text:
         return history, state
@@ -812,7 +720,7 @@ def handle_message(text, history, state):
         replies = ["Goodbye! Stay healthy! 👋 Type **restart** whenever you want to begin again."]
     elif lowered == "restart":
         start_over(state)
-        history = []                                  # fresh chat window
+        history = []                                  
         replies = [greeting_text()]
     elif state["step"] in ("ended", "blocked"):
         replies = ["Please type **restart** to start again."]
@@ -825,27 +733,21 @@ def handle_message(text, history, state):
         history = history + [{"role": "assistant", "content": reply}]
     return history, state
 
-
-# ------------------------------------------------------------------
-# DASHBOARD (HTML panel on the right) - all user text is escaped
-# ------------------------------------------------------------------
 def bar_html(percent, label, right_text):
-    """Return one HTML progress bar (green >= 90%, amber >= 75%, red below)."""
+
     colour = "#10b981" if percent >= 90 else "#f59e0b" if percent >= 75 else "#ef4444"
     width = min(percent, 100)
     return (f'<div class="db-bar-row"><div class="db-bar-label"><span>{label}</span>'
             f'<span>{right_text}</span></div><div class="db-bar">'
             f'<div class="db-bar-fill" style="width:{width:.0f}%;background:{colour}"></div></div></div>')
 
-
 def metric_html(label, value, small=""):
-    """Return one small metric card."""
+
     return (f'<div class="db-metric"><div class="db-l">{label}</div>'
             f'<div class="db-v">{value}</div><div class="db-s">{small}</div></div>')
 
-
 def onboarding_html(state):
-    """Dashboard shown while the questions are still being answered."""
+
     answered = state["profile"]
     percent = len(answered) / len(STEPS) * 100
     if state["step"] == "ended":
@@ -868,9 +770,8 @@ def onboarding_html(state):
             '<div class="db-note">Answer the questions in the chat and your personal numbers '
             'will appear here. ✨</div></div>')
 
-
 def dashboard_html(state):
-    """Return the dashboard HTML for the current state."""
+
     if state["plan"] is None:
         return onboarding_html(state)
 
@@ -917,10 +818,6 @@ def dashboard_html(state):
         '</div>'
     )
 
-
-# ------------------------------------------------------------------
-# LOOK AND FEEL
-# ------------------------------------------------------------------
 HEADER_HTML = """
 <div class="hero">
   <div class="hero-emoji">🥗</div>
@@ -963,11 +860,10 @@ CSS = """
 .db-chip {font-size: .78rem; padding: 3px 10px; border-radius: 999px; background: rgba(16,185,129,.18);}
 """
 
-MAX_QUICK = 6  # number of quick-reply buttons under the chat box
-
+MAX_QUICK = 6  
 
 def quick_labels(state):
-    """Return the labels of the quick-reply buttons for the current step."""
+
     step = state["step"]
     if step in CHOICES:
         return CHOICES[step]
@@ -979,9 +875,8 @@ def quick_labels(state):
         return ["restart"]
     return []
 
-
 def ui_updates(state):
-    """Return updates for: dashboard, the quick buttons, the tools row and the download box."""
+
     labels = quick_labels(state)
     buttons = []
     for i in range(MAX_QUICK):
@@ -993,21 +888,16 @@ def ui_updates(state):
     return [dashboard_html(state), *buttons, gr.update(visible=state["step"] == "chat"),
             gr.update(value=state["file"], visible=has_file)]
 
-
-# ------------------------------------------------------------------
-# BUILDING THE GRADIO APP
-# ------------------------------------------------------------------
 def build_app():
-    """Create the Gradio interface and connect the buttons to the chatbot brain."""
+
     theme = gr.themes.Soft(primary_hue="emerald", secondary_hue="teal", neutral_hue="slate")
 
-    # Gradio 6 takes theme/css in launch(); older versions take them in Blocks()
     css_in_launch = "css" in inspect.signature(gr.Blocks.launch).parameters
     blocks_kwargs = {} if css_in_launch else {"theme": theme, "css": CSS}
     launch_kwargs = {"theme": theme, "css": CSS} if css_in_launch else {}
 
     chatbot_kwargs = {}
-    if "type" in inspect.signature(gr.Chatbot.__init__).parameters:   # Gradio 4/5
+    if "type" in inspect.signature(gr.Chatbot.__init__).parameters:   
         chatbot_kwargs["type"] = "messages"
 
     with gr.Blocks(title="DietBot - Diet Plan Generator", **blocks_kwargs) as demo:
@@ -1042,12 +932,12 @@ def build_app():
         outputs = [chatbot, state, box, dashboard, *quick, tools, file_box]
 
         def respond(text, history, session):
-            """Send one message through the brain and refresh every part of the screen."""
+
             history, session = handle_message(text, history, session)
             return [history, session, "", *ui_updates(session)]
 
         def make_quick_handler(index):
-            """Return a click handler for quick button number 'index'."""
+
             def on_click(history, session):
                 labels = quick_labels(session)
                 text = labels[index] if index < len(labels) else ""
@@ -1065,14 +955,11 @@ def build_app():
 
     return demo, launch_kwargs
 
-
-
 if __name__ == "__main__":
     import os
 
     app, launch_options = build_app()
 
-    # Remove options that may conflict with Render
     launch_options.pop("server_name", None)
     launch_options.pop("server_port", None)
     launch_options.pop("share", None)
