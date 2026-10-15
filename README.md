@@ -1,6 +1,6 @@
 # DietBot — Your Personal Diet Assistant
 
-Making healthy eating easier, one conversation at a time! 💚
+Making healthy eating easier, one conversation at a time! 
 
 **DietBot** is a Python-based chatbot with a simple, interactive web interface built using Gradio. It gives users a place to explore diet and nutrition-related questions through a conversational experience.
 
