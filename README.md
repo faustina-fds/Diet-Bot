@@ -1,4 +1,4 @@
-# 🥗 DietBot — Your Personal Diet Assistant
+# DietBot — Your Personal Diet Assistant
 
 Making healthy eating easier, one conversation at a time! 💚
 
@@ -6,7 +6,7 @@ Making healthy eating easier, one conversation at a time! 💚
 
 I built this project to explore chatbot development and learn how Python can be used to create interactive web applications.
 
-## ✨ What is DietBot?
+##  What is DietBot?
 
 -  **Chat-based experience** — interact with the bot through a simple interface.
 -  **Diet-focused conversations** — explore diet and nutrition-related topics.
